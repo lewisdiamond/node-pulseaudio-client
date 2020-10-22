@@ -109,9 +109,11 @@ namespace pulse {
       p->Return();
     }else{
       Local<Object> info = Object::New(p->isolate);
+      Isolate *isolate = info->GetIsolate();
+      Local<Context> context = isolate->GetCurrentContext();
 
-#define field(_type_, _name_, ...) info->Set(String::NewFromOneByte(p->isolate, (const uint8_t*) #_name_), _type_::New(p->isolate, i->__VA_ARGS__ _name_))
-#define field_str(_name_, ...) info->Set(String::NewFromOneByte(p->isolate, (const uint8_t*) #_name_), String::NewFromUtf8(p->isolate, i->__VA_ARGS__ _name_))
+#define field(_type_, _name_, ...) info->Set(context, String::NewFromOneByte(p->isolate, (const uint8_t*) #_name_).ToLocalChecked(), _type_::New(p->isolate, i->__VA_ARGS__ _name_))
+#define field_str(_name_, ...) info->Set(context, String::NewFromOneByte(p->isolate, (const uint8_t*) #_name_).ToLocalChecked(), String::NewFromUtf8(p->isolate, i->__VA_ARGS__ _name_).ToLocalChecked())
       field_str(name);
       field(Number, index);
       field_str(description);
@@ -127,7 +129,7 @@ namespace pulse {
       Local<Value> local_argv0 = p->argv[0].Get(p->isolate);
       Local<Array> list = local_argv0.As<Array>();
 
-      list->Set(list->Length(), info);
+      list->Set(context, list->Length(), info);
     }
   }
 
@@ -149,19 +151,20 @@ namespace pulse {
   Context::Init(Local<Object> target){
     mainloop_api.userdata = uv_default_loop();
     Isolate *isolate = target->GetIsolate();
+    Local<Context> context = isolate->GetCurrentContext();
 
     Local<FunctionTemplate> tpl = FunctionTemplate::New(isolate, New);
 
-    tpl->SetClassName(String::NewFromOneByte(isolate, (const uint8_t*)"PulseAudioContext"));
+    tpl->SetClassName(String::NewFromOneByte(isolate, (const uint8_t*)"PulseAudioContext").ToLocalChecked());
     tpl->InstanceTemplate()->SetInternalFieldCount(1);
 
     NODE_SET_PROTOTYPE_METHOD(tpl, "connect", Connect);
     NODE_SET_PROTOTYPE_METHOD(tpl, "disconnect", Disconnect);
     NODE_SET_PROTOTYPE_METHOD(tpl, "info", Info);
 
-    Local<Function> cfn = tpl->GetFunction();
+    Local<Function> cfn = tpl->GetFunction(context).ToLocal();
 
-    target->Set(String::NewFromOneByte(isolate, (const uint8_t*) "Context"), cfn);
+    target->Set(context, String::NewFromOneByte(isolate, (const uint8_t*) "Context").ToLocalChecked(), cfn);
 
     AddEmptyObject(isolate, cfn, flags);
     DefineConstant(isolate, flags, noflags, PA_CONTEXT_NOFLAGS);
@@ -185,6 +188,7 @@ namespace pulse {
   void
   Context::New(const FunctionCallbackInfo<Value>& args) {
     Isolate *isolate = args.GetIsolate();
+    Local<Context> context = isolate->GetCurrentContext();
 
     JS_ASSERT(isolate, args.IsConstructCall());
 
@@ -193,7 +197,7 @@ namespace pulse {
     String::Utf8Value *client_name = NULL;
 
     if(args[0]->IsString()){
-      client_name = new String::Utf8Value(args[0]->ToString());
+      client_name = new String::Utf8Value(isolate, args[0]->ToString(context).ToLocalChecked());
     }
 
     /* initialize instance */
@@ -219,6 +223,7 @@ namespace pulse {
   void
   Context::Connect(const FunctionCallbackInfo<Value>& args){
     Isolate *isolate = args.GetIsolate();
+    Local<Context> context = isolate->GetCurrentContext();
 
     JS_ASSERT(isolate, args.Length() == 2);
 
@@ -229,13 +234,13 @@ namespace pulse {
     String::Utf8Value *server_name = NULL;
 
     if(args[1]->IsString()){
-      server_name = new String::Utf8Value(args[1]->ToString());
+      server_name = new String::Utf8Value(isolate, args[1]->ToString(context).ToLocalChecked());
     }
 
     pa_context_flags flags = PA_CONTEXT_NOFLAGS;
 
     if(args[2]->IsUint32()){
-      flags = pa_context_flags(args[2]->Uint32Value());
+      flags = pa_context_flags(args[2]->Uint32Value(context).FromMaybe(0));
     }
     
     int status = ctx->connect(server_name, flags);
@@ -271,10 +276,10 @@ namespace pulse {
     JS_ASSERT(isolate, args[1]->IsFunction());
 
     Context *ctx = ObjectWrap::Unwrap<Context>(args.This());
-
+    Local<Context> context = isolate->GetCurrentContext();
     JS_ASSERT(isolate, ctx);
 
-    ctx->info(InfoType(args[0]->Uint32Value()), args[1].As<Function>());
+    ctx->info(InfoType(args[0]->Uint32Value(context).FromMaybe(0)), args[1].As<Function>());
 
     args.GetReturnValue().SetUndefined();
   }
